@@ -1,0 +1,414 @@
+---
+title: "Cosmetic Analysis"
+author: "Deviprasanna , Aarthi"
+date: "2023-04-30"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+Due to factors like the rise in the proportion of women working, their popularity on social media, and rising public awareness of the value of skincare, the popularity of cosmetics has rapidly increased in recent years. As a result, there have been a lot more brands and makeup products on the market, and this trend is only expected to continue in the years to come. Given the variety of products available, it may be challenging for a consumer to put their trust in a specific brand or product that will meet their needs. In order to determine what makes a brand successful and to make sure the consumer chooses the safest and most appropriate product, we are analyzing several cosmetic product characteristics for this project.
+
+First, we find out how each feature correlates with the other feature in the dataset using a correlation heatmap. This gives us an idea of how much the each feature depends on the other, which is useful for our future analysis tasks.
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+df= pd.read_csv(r"C:\Users\gdevi\Desktop\final_dataset.csv", sep=",",encoding='latin-1')
+
+df['subcategory'] =df['subcategory'].astype('category').cat.codes
+df['website'] =df['website'].astype('category').cat.codes
+df['brand'] =df['brand'].astype('category').cat.codes
+df['form'] =df['form'].astype('category').cat.codes
+df['category'] =df['category'].astype('category').cat.codes
+df['type']=df['type'].astype('category').cat.codes
+df.price = pd.to_numeric(df.price, errors='coerce')
+df.rating = pd.to_numeric(df.rating, errors='coerce')
+df.noofratings = pd.to_numeric(df.noofratings, errors='coerce')
+df1=df[['subcategory','category','brand','price','type','form','rating','noofratings']]
+
+sns.set(rc = {'figure.figsize':(8,6)})
+sns.heatmap(df1.corr()) 
+```
+T-distributed Stochastic Neighbor Embedding (t-SNE) is a nonlinear dimensionality reduction technique. It can reduce the dimensions of data while keeping the similarities between the tuples. The cosmetic products in the data will be vectorized into two-dimensional coordinates, and the distances between the points will indicate the similarities between the products.
+
+The plot of ingredient similarity of cosmetics is given below.Each point on the plot corresponds to a cosmetic product.The axes of the t-SNE plot show the two-dimensional visualization of the ingredients. The distance between the points is proportional to the similarity in their ingredients. 
+```{python}
+
+from sklearn.manifold import TSNE
+# Initialize dictionary, list, and initial index
+ingredient_idx = {}
+corpus = []
+idx = 0
+c=0
+# For loop for tokenization
+for i in range(len(df.product_name)):    
+    ingredients = df['ingredients'][i]
+    try:
+      ingredients_lower = ingredients.lower()
+      tokens = ingredients_lower.split(', ')
+      corpus.append(tokens)
+      for ingredient in tokens:
+          if ingredient not in ingredient_idx:
+              ingredient_idx[ingredient] = idx
+              idx += 1
+    except:
+      c+=1  
+
+
+# Get the number of items and tokens 
+M = len(df.product_name)
+N = len(ingredient_idx)
+
+# Initialize a matrix of zeros
+A = np.zeros([M,N])
+
+# Define the oh_encoder function
+def oh_encoder(tokens):
+    x = np.zeros(N)
+    for ingredient in tokens:
+        # Get the index for each ingredient
+        idx = ingredient_idx[ingredient]
+        # Put 1 at the corresponding indices
+        x[idx] = 1
+    return x
+  
+# Make a document-term matrix
+i = 0
+for tokens in corpus:
+    A[i, :] = oh_encoder(tokens)
+    i+=1
+# Dimension reduction with t-SNE
+model = TSNE(n_components=2,learning_rate=70,random_state=42)
+tsne_features = model.fit_transform(A)
+
+# Make X, Y columns 
+import pandas as pd
+moisturizers_dry= pd.DataFrame(columns=['X','Y'])
+moisturizers_dry['X'] = tsne_features[:,0]
+moisturizers_dry['Y'] = tsne_features[:,1]
+
+from bokeh.io import show, output_notebook, push_notebook
+from bokeh.plotting import figure
+from bokeh.models import ColumnDataSource, HoverTool
+
+# Make a source and a scatter plot  
+source = ColumnDataSource(moisturizers_dry)
+plot = figure(x_axis_label = "T-SNE 1", 
+              y_axis_label = "T-SNE 2", 
+              width = 600, height = 500)
+plot.circle(x = "X", 
+    y = "Y", 
+    source = source, 
+    size = 10, color = '#FF7373', alpha = .6)
+```
+The join function was used to combine all the ingredients in the ‘ingredients’ column into a single string. A word cloud can be created from the combined ingredients string using the WordCloud function, and the generate function is used to generate the word cloud from the combined ingredients string. Finally, this is displayed using matplotlib.
+
+
+Visualizing the data to show the frequency of different ingredients in the products will help to identify which ingredients are popular and which ones are not. The chemicals used for artificial coloring (Iron oxides, CI) seem to be the most recurring ingredients.
+
+```{python}
+
+from wordcloud import WordCloud
+# Combine all the ingredients into a single string
+all_ingredients = " ".join(df["ingredients"].str.lower().dropna())
+
+# Create a word cloud from the combined ingredients string
+wordcloud = WordCloud(width=800, height=800, background_color="white").generate(all_ingredients)
+
+# Display the word cloud
+plt.figure(figsize=(5,5))
+plt.imshow(wordcloud, interpolation='bilinear')
+plt.axis("off")
+plt.show()
+```
+
+Estimating the price through regression helps in optimizing the price for the newly launched products. The regression algorithms used for this task are Linear, Random Forest, Support Vector Machine, and Gradient Boosting. However, all these algorithms produce a considerable amount of MSE.
+
+```{python}
+import pandas as pd
+import numpy as np
+import re
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, mean_squared_error
+random_state = 1
+# calculate the mean price of non-null values
+mean_price = df['price'].mean()
+
+# fill the null values with the mean price
+df['price'].fillna(mean_price, inplace=True)
+X = df[['subcategory', 'category','brand','form']]
+y = df['price']
+scaler = MinMaxScaler()
+y = scaler.fit_transform(y.values.reshape(-1, 1))
+
+encoder = LabelEncoder()
+df['brand'] = encoder.fit_transform(df['brand'])
+df['form'] = encoder.fit_transform(df['form'])
+df['subcategory'] = encoder.fit_transform(df['subcategory'])
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=1)
+```
+Using Linear Regreesion Algorithm, to predict the price value of product
+```{python}
+from sklearn.linear_model import LinearRegression
+# Train a linear regression model
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+
+# Evaluate the models
+lr_rmse = mean_squared_error(y_test, lr.predict(X_test), squared=False)
+
+print('Linear Regression RMSE: {:.2f}'.format(lr_rmse))
+```
+Using Random Forest Algorithm, to predict the price value of product
+```{python}
+from sklearn.ensemble import RandomForestRegressor
+
+rf = RandomForestRegressor(n_estimators=100, random_state=42)
+y_train = y_train.ravel()
+rf.fit(X_train, y_train)
+rf_rmse = mean_squared_error(y_test, rf.predict(X_test), squared=False)
+print('Random Forest RMSE: {:.2f}'.format(rf_rmse))
+```
+
+Using Gradient Boosting Regressor, to predict the price value of product
+```{python}
+from sklearn.ensemble import GradientBoostingRegressor
+
+gbr = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)
+
+# Train the model on the training data
+gbr.fit(X_train, y_train)
+
+# Use the trained model to make predictions on the test data
+y_pred = gbr.predict(X_test)
+
+# Evaluate the model's performance
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+print('Root Mean Squared Error:', rmse)
+```
+
+The price of a new product launched can be determined based on the brand, sub-category,form and skin type preferred. The price of the dataset is divided into 3 categories based on the quartile ranges.
+The classification algorithms used for this task are linear, logistic regression, decision tree, and random forest.
+
+```{python}
+import pandas as pd
+import numpy as np
+import re
+import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import make_column_transformer
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+skincare = pd.read_csv(r"C:\Users\gdevi\Desktop\final_dataset.csv", sep=",",encoding='latin-1')
+# calculate the mean price of non-null values
+skincare['price'] = skincare['price'].astype(float)
+mean_price = skincare['price'].mean()
+
+# fill the null values with the mean price
+skincare['price'].fillna(mean_price, inplace=True)
+
+
+print(skincare['price'].describe())
+
+def price_to_class(x):
+    if x <= 1300.000000:
+        x = 0
+    elif (x > 1300.000000) and (x <= 2000.000000):
+        x = 1
+    elif (x > 2000.000000) and (x <= 2500.000000):
+        x = 2
+    elif x > 2500.000000: 
+        x = 3
+    return x
+  
+skincare['price'] = skincare["price"].apply(price_to_class)
+
+# convert the price to 1 for 'expensive' if over the 50 percentile, and to 0 for 'cheap' if under the 50 percentile
+
+skincare['price'].value_counts()
+
+y = np.array(skincare['price'])
+y.shape
+# prepare labels
+y
+
+#multiclass logistic reg
+
+def tokenizer(x) -> list: 
+    x = x.replace('(', '')
+    x = x.replace(')', '')
+    x = x.replace("\xa0", " ")
+    x = x.replace(".", ",")
+    x = x.replace(" & ", ", ")
+    x = re.split(', ', x)
+    return x
+  
+ohe = OneHotEncoder()
+vect = CountVectorizer(tokenizer=lambda x: tokenizer(x))
+scaler = StandardScaler()
+
+X = skincare[['brand', 'subcategory','form']]
+
+
+# now only use brand and product type
+
+X
+X_train, X_test, y_train, y_test = train_test_split(X, y, 
+                                                    test_size = 0.25,random_state=2)
+                                                    
+ct = make_column_transformer(
+    (ohe, ["subcategory"]),
+    (ohe, ["form"]),
+    (vect, "brand"),
+    remainder="passthrough")
+    
+from sklearn.linear_model import LogisticRegression
+
+lr_ovr = LogisticRegression(random_state=random_state)
+lrovr_pipe = make_pipeline(ct, lr_ovr)
+lrovr_pipe.fit(X_train, y_train)
+lrovr_predictions = lrovr_pipe.predict(X_test)
+accuracy_score(y_test, lrovr_predictions)
+```
+```{python}
+#MULTICLASS - DECISION TREE
+
+from sklearn.tree import DecisionTreeClassifier
+dt = DecisionTreeClassifier(random_state=random_state, criterion='entropy')
+ct = make_column_transformer(
+    (ohe, ["subcategory"]),
+    (vect, "brand"),
+    (ohe, ["form"]),
+    remainder="passthrough")
+dt_pipe = make_pipeline(ct, dt)
+dt_pipe.fit(X_train, y_train)
+dt_predictions = dt_pipe.predict(X_test)
+accuracy_score(y_test, dt_predictions)
+
+confusion_matrix(y_test, dt_predictions)
+```
+```{python}
+
+#BRAND - MULTICLASS - RANDOM FORESTS
+
+from sklearn.ensemble import RandomForestClassifier
+rf = RandomForestClassifier(n_estimators = 1000, random_state = random_state)
+
+rf_pipe = make_pipeline(ct, rf)
+rf_pipe.fit(X_train, y_train)
+rf_pred = rf_pipe.predict(X_test)
+accuracy_score(y_test, rf_pred)
+```
+The ranking of a brand based on the rating and the number of people who rated all products of a brand can be considered a composite ranking in machine learning. Composite ranking is a technique that creates a ranked list of things based on various attributes or criteria.
+Here, we have used composite ranking by taking the rating and the number of ratings into consideration. The ranking of the brand is shown in the figure
+
+```{python}
+
+# Sort the brands based on rating and number of ratings
+brand_data = df.groupby('brand').agg({'rating': 'mean', 'noofratings': 'sum'})
+sorted_brands = brand_data.sort_values(['rating', 'noofratings'], ascending=False)
+sorted_brands['CompositeRanking'] = (0.7 * sorted_brands['rating']) + (0.3 * sorted_brands['noofratings'])
+
+# Rank the brands based on their position in the sorted list
+ranked_brands = sorted_brands.sort_values(by='CompositeRanking')
+ranked_brands['Rank'] = ranked_brands['CompositeRanking'].rank(method='dense', ascending=False)
+
+# Select only the Brand and Rank columns and print the resulting DataFrame
+print(ranked_brands.sort_values('Rank'))
+```
+
+
+A stacked bar plot shows two categorical variables. 
+The category is the primary variable, and is represented along the x-axis. The subcategory is the secondary variable, and is represented as stacks within each category bar. The y-axis represents the percentage of the number of products in each subcategory within a category.
+```{python}
+df= pd.read_csv(r"C:\Users\gdevi\Desktop\final_dataset.csv", sep=",",encoding='latin-1')
+# group by category and subcategory and count the number of products in each subcategory
+df_grouped = df.groupby(['category', 'subcategory']).size().reset_index(name='counts')
+
+# group by category and count the total number of products in each category
+df_category = df.groupby('category').size().reset_index(name='total_counts')
+
+# merge the two dataframes to calculate the percentage of subcategories in each category
+df_merged = pd.merge(df_grouped, df_category, on='category')
+df_merged['percentage'] = (df_merged['counts'] / df_merged['total_counts']) * 100
+
+# pivot the dataframe to create a multi-level index
+df_pivot = df_merged.pivot(index='category', columns='subcategory', values='percentage')
+
+# plot a horizontal stacked bar chart
+fig, ax = plt.subplots(figsize=(8,8))
+df_pivot.plot(kind='barh', stacked=True, ax=ax)
+ax.set_xlabel('Percentage')
+ax.set_ylabel('Category')
+ax.set_title('Percentage of Subcategories by Category')
+legend = ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+# display the plot
+plt.show()
+```
+Visualizing the data to show the distribution of the formulation of products in each category can be a useful way to gain insights into product popularity and trends.
+
+To illustrate the relative popularity of various formulations according to their category, a heat map can be applied. Each cell in the heat map represents the percentage or count of products in a particular category with a particular formulation, with the color of the cell indicating the level of popularity.
+
+```{python}
+# create a pivot table to count the number of products in each category-form combination
+pivot_table = pd.pivot_table(df, index='category', columns='form', values='subcategory', aggfunc='count')
+
+# plot the heatmap
+sns.heatmap(pivot_table, cmap='YlGnBu', annot=True, fmt='g')
+```
+The number of people rating a category of cosmetic products tells the influence of the website on its purchase. This is visualized using a pie chart that shows the percenatge of people using the website by number of people rated. It helps in inference the popular website used for purchasing. 
+
+```{python}
+import pandas as pd
+import matplotlib.pyplot as plt
+data=df
+data.noofratings= pd.to_numeric(data.noofratings, errors='coerce')
+# Filter by website and count number of ratings
+website1_ratings = data[data['website'] == 'sephora']['noofratings'].sum()
+website2_ratings = data[data['website'] == 'amazon']['noofratings'].sum()
+website3_ratings = data[data['website'] == 'ulta']['noofratings'].sum()
+website4_ratings = data[data['website'] == 'flipkart']['noofratings'].sum()
+# Create pie chart for each website
+labels = ['sephora','amazon','ulta','flipkart']
+sizes = [website1_ratings, website2_ratings, website3_ratings,website4_ratings]
+colors = ['blue', 'lightgreen', 'pink','orange']
+#plt.pie(sizes,labels=labels,colors=colors)
+#plt.show()
+```
+It is known that brands heavily influence a customer’s decision-making and the perceived value of a product. The brand can affect the price of a product due to various factors like brand reputation, marketing and advertising, and the overall brand image. A well-established brand with a strong reputation for quality and luxury can often command a higher price for its products. Consumers may be willing to pay more for a brand they perceive as prestigious or exclusive, as they believe they are getting a higher quality product or a unique experience.
+A bar plot is used to show the distribution of a variable across different categories. The x-axis of the plot represents the categories and the y-axis represents the value of the variable being measured. The height of each bar represents the value of the variable for the corresponding category. 
+```{python}
+# Take the top 20 and least 20 brands based on the mean price
+grouped_data = df.groupby('brand')['price'].agg(['mean', 'median', 'std'])
+top = grouped_data.nlargest(40, 'mean')
+
+# Plot the bar chart for the selected brands
+top.plot(kind='bar', stacked=True, figsize=(18,6))
+plt.title('Distribution of Price for Selected Brands')
+plt.xlabel('Brand')
+plt.ylabel('Price')
+plt.show()
+```
